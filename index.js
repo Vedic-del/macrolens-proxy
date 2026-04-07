@@ -46,4 +46,46 @@ app.get('/feeds', async (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
+app.get('/market-data', async (req, res) => {
+  const symbols = {
+    usdinr: 'USDINR=X',
+    brentCrude: 'BZ=F',
+    gold: 'GC=F',
+    sensex: '^BSESN',
+    niftyBank: '^NSEBANK',
+    india10y: '^IN10Y',
+    us10y: '^TNX',
+    vix: '^VIX'
+  };
+
+  const results = {};
+
+  await Promise.allSettled(
+    Object.entries(symbols).map(async ([key, symbol]) => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; MacroLensBot/1.0)',
+            'Accept': 'application/json'
+          }
+        });
+        const data = await response.json();
+        const quote = data?.chart?.result?.[0]?.meta;
+        const closes = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        results[key] = {
+          success: true,
+          price: quote?.regularMarketPrice,
+          previousClose: quote?.previousClose,
+          currency: quote?.currency,
+          sparkline: closes.filter(Boolean).slice(-5)
+        };
+      } catch (err) {
+        results[key] = { success: false, error: err.message };
+      }
+    })
+  );
+
+  res.json(results);
+});
 app.listen(PORT, () => console.log(`MacroLens proxy running on port ${PORT}`));
