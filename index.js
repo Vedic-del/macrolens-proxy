@@ -6,15 +6,13 @@ const app = express();
 app.use(cors());
 
 const FEEDS = {
-  etMarkets: 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
   etEconomy: 'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
   etPolicy: 'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
   mint: 'https://www.livemint.com/rss/markets',
   bs: 'https://www.business-standard.com/rss/home_page_top_stories.rss',
   reuters: 'https://feeds.reuters.com/reuters/INbusinessNews',
   cnbc: 'https://www.cnbc.com/id/20910258/device/rss/rss.html',
-  yahoo: 'https://finance.yahoo.com/news/rssindex'
-};
+  };
 
 app.get('/feeds', async (req, res) => {
   const results = {};
