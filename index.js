@@ -8,11 +8,18 @@ app.use(cors());
 const FEEDS = {
   etEconomy: 'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
   etPolicy: 'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
-  mint: 'https://www.livemint.com/rss/markets',
+  etFinance: 'https://economictimes.indiatimes.com/news/economy/finance/rssfeeds/1377065691.cms',
+  mint: 'https://www.livemint.com/rss/economy',
+  mintMoney: 'https://www.livemint.com/rss/money',
   bs: 'https://www.business-standard.com/rss/home_page_top_stories.rss',
-  reuters: 'https://feeds.reuters.com/reuters/INbusinessNews',
+  bsBanking: 'https://www.business-standard.com/rss/finance-10301.rss',
   cnbc: 'https://www.cnbc.com/id/20910258/device/rss/rss.html',
-  };
+  cnbcAsia: 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
+  bloombergIndia: 'https://feeds.bloomberg.com/india/news.rss',
+  forbesIndia: 'https://www.forbesindia.com/rss/news.xml',
+  financialExpress: 'https://www.financialexpress.com/economy/feed/',
+  feRBI: 'https://www.financialexpress.com/about/rbi/feed/'
+};
 
 app.get('/feeds', async (req, res) => {
   const results = {};
