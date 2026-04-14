@@ -6,6 +6,7 @@ const app = express();
 app.use(cors());
 
 const FEEDS = {
+  // --- EXISTING SOURCES ---
   etEconomy: 'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
   etPolicy: 'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
   etFinance: 'https://economictimes.indiatimes.com/news/economy/finance/rssfeeds/1377065691.cms',
@@ -18,7 +19,24 @@ const FEEDS = {
   bloombergIndia: 'https://feeds.bloomberg.com/india/news.rss',
   forbesIndia: 'https://www.forbesindia.com/rss/news.xml',
   financialExpress: 'https://www.financialexpress.com/economy/feed/',
-  feRBI: 'https://www.financialexpress.com/about/rbi/feed/'
+  feRBI: 'https://www.financialexpress.com/about/rbi/feed/',
+
+  // --- NEW: INDIAN GOVERNMENT & REGULATORY ---
+  pib: 'https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3',
+  sebi: 'https://www.sebi.gov.in/sebi_data/rss/sebirss.xml',
+  finmin: 'https://finmin.nic.in/sites/default/files/rss.xml',
+  rbiPress: 'https://www.rbi.org.in/rss/RBIPressReleases.aspx',
+
+  // --- NEW: INDIAN BUSINESS MEDIA ---
+  bqPrime: 'https://www.bqprime.com/rss',
+  hinduBizLine: 'https://www.thehindubusinessline.com/economy/feeder/default.rss',
+  moneycontrol: 'https://www.moneycontrol.com/rss/economy.xml',
+  feEconomy: 'https://www.financialexpress.com/economy/feed/',
+
+  // --- NEW: GLOBAL MACRO (INSTITUTIONAL) ---
+  imf: 'https://www.imf.org/en/News/Rss?language=eng',
+  worldBankIndia: 'https://feeds.worldbank.org/worldbank/india/rss.xml',
+  bis: 'https://www.bis.org/rss/press_general.htm'
 };
 
 app.get('/feeds', async (req, res) => {
@@ -46,6 +64,7 @@ app.get('/feeds', async (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
+
 app.get('/market-data', async (req, res) => {
   const symbols = {
     usdinr: 'USDINR=X',
@@ -88,10 +107,10 @@ app.get('/market-data', async (req, res) => {
 
   res.json(results);
 });
+
 // Source discovery + credibility testing
 app.get('/discover-sources', async (req, res) => {
   try {
-    // Step 1: Ask Gemini to suggest new RSS sources
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -116,7 +135,6 @@ app.get('/discover-sources', async (req, res) => {
     const cleanText = rawText.replace(/```json|```/g, '').trim();
     const suggestions = JSON.parse(cleanText);
 
-    // Step 2: Test each URL — is it alive? Does it return RSS?
     const tested = await Promise.allSettled(
       suggestions.map(async (source) => {
         try {
@@ -139,11 +157,12 @@ app.get('/discover-sources', async (req, res) => {
     const results = tested
       .filter(r => r.status === 'fulfilled')
       .map(r => r.value)
-      .filter(r => r.credible); // Only return sources that actually work
+      .filter(r => r.credible);
 
     res.json({ sources: results, discoveredAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.listen(PORT, () => console.log(`MacroLens proxy running on port ${PORT}`));
