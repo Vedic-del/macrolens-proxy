@@ -88,4 +88,62 @@ app.get('/market-data', async (req, res) => {
 
   res.json(results);
 });
+// Source discovery + credibility testing
+app.get('/discover-sources', async (req, res) => {
+  try {
+    // Step 1: Ask Gemini to suggest new RSS sources
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are helping build a macroeconomic news dashboard for an Indian Asset Reconstruction Company. 
+              Suggest 8 high-quality, publicly accessible RSS feed URLs that would be relevant for tracking: 
+              Indian credit markets, RBI policy, banking sector, NPAs, distressed assets, Indian economy, and global macro trends affecting India.
+              Focus on institutional sources: government bodies, regulators, reputed financial media.
+              Return ONLY a valid JSON array, no markdown, no explanation:
+              [{"name": "Source Name", "url": "https://rss-url-here", "category": "Indian Regulatory|Indian Media|Global Macro", "rationale": "one line why this is relevant"}]`
+            }]
+          }]
+        })
+      }
+    );
+    const geminiData = await geminiRes.json();
+    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const cleanText = rawText.replace(/```json|```/g, '').trim();
+    const suggestions = JSON.parse(cleanText);
+
+    // Step 2: Test each URL — is it alive? Does it return RSS?
+    const tested = await Promise.allSettled(
+      suggestions.map(async (source) => {
+        try {
+          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}&count=3`;
+          const testRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+          const testData = await testRes.json();
+          const isValid = testData.status === 'ok' && testData.items?.length > 0;
+          return {
+            ...source,
+            credible: isValid,
+            sampleHeadline: isValid ? testData.items[0]?.title : null,
+            lastPublished: isValid ? testData.items[0]?.pubDate : null
+          };
+        } catch {
+          return { ...source, credible: false, sampleHeadline: null };
+        }
+      })
+    );
+
+    const results = tested
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter(r => r.credible); // Only return sources that actually work
+
+    res.json({ sources: results, discoveredAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.listen(PORT, () => console.log(`MacroLens proxy running on port ${PORT}`));
