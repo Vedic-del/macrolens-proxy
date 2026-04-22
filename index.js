@@ -113,87 +113,69 @@ app.get('/market-data', async (req, res) => {
     })
   );
 
-  // ── 2. AAA Corp Bond Spread ────────────────────────────────────────────────
-  // Strategy: fetch HDFC Ltd NCD proxy (HDFCNCD.NS) as AAA 10Y approximation
-  // OR use a fixed published spread from FBIL (scraped)
-  try {
-    const fbilRes = await fetch('https://www.fbil.org.in/BondMarket', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120',
-        'Accept': 'text/html',
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-    const html = await fbilRes.text();
-    // FBIL publishes AAA spread — look for spread value near "AAA" text
-    const match = html.match(/AAA[^<]*?(\d+\.\d+)/i);
-    const spread = match ? parseFloat(match[1]) : null;
+// ── 2. AAA Corp Bond Spread ────────────────────────────────────────────────
+// Source: BSE India bond data — HDFC AAA 10Y NCD vs G-Sec
+// Both are Yahoo Finance tickers that actually exist
+try {
+  const [aaaRes, gsecRes] = await Promise.allSettled([
+    yahooFetch('0P0001BW9T.BO'),  // HDFC AAA NCD — BSE-listed bond proxy
+    yahooFetch('IN10Y=RR'),
+  ]);
 
-    if (spread && spread > 0 && spread < 500) {
-      results['aaaSpread'] = {
-        success: true, price: spread, previousClose: spread, currency: 'bps', sparkline: [],
-      };
-    } else {
-      // Fallback: compute from two Yahoo tickers that DO exist
-      // LICHSGFIN.NS (LIC Housing, top AAA-rated NCD issuer) as AAA proxy
-      const proxyBond = await yahooFetch('LICHSGFIN.NS');
-      const gsec      = results['india10y'];
-      if (proxyBond.success && gsec?.success && gsec.price) {
-        // This gives a rough credit spread directionally, not exact bps
-        results['aaaSpread'] = { success: false, error: 'AAA benchmark unavailable — FBIL/CCIL not accessible' };
-      } else {
-        results['aaaSpread'] = { success: false, error: 'AAA spread data unavailable' };
-      }
-    }
-  } catch (err) {
-    results['aaaSpread'] = { success: false, error: err.message };
-  }
+  const aaaPrice  = aaaRes.status === 'fulfilled'  ? aaaRes.value?.price  : null;
+  const gsecPrice = gsecRes.status === 'fulfilled' ? gsecRes.value?.price : null;
 
-  // ── 3. India 5Y CDS ────────────────────────────────────────────────────────
-  try {
-    // Try investing.com first (more reliable table structure)
-    const cdsRes = await fetch(
-      'https://www.worldgovernmentbonds.com/cds-historical-data/india/5-years/',
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36',
-          'Accept': 'text/html',
-        },
-        signal: AbortSignal.timeout(10000),
-      }
+  if (aaaPrice && gsecPrice) {
+    const spread = parseFloat(((aaaPrice - gsecPrice) * 100).toFixed(1));
+    results['aaaSpread'] = {
+      success: true, price: spread,
+      previousClose: spread, currency: 'bps', sparkline: []
+    };
+  } else {
+    // Hard fallback: SEBI/RBI publish ~55-80 bps as typical AAA-GSec spread
+    // Use Investing.com India corporate bond index
+    const investRes = await fetch(
+      'https://api.investing.com/api/financialdata/historical/21666?period=P1W&interval=PT1H',
+      { headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120', 'domain-id': 'in' } }
     );
-    const html = await cdsRes.text();
-
-    // Try multiple patterns since the page structure can vary
-    let latest = null, prev = null;
-
-    // Pattern 1: class="num"
-    const m1 = [...html.matchAll(/class="num"[^>]*>([\d.]+)<\/td>/g)];
-    if (m1.length >= 1) { latest = parseFloat(m1[0][1]); prev = m1[1] ? parseFloat(m1[1][1]) : null; }
-
-    // Pattern 2: bare number in table cell near "India"
-    if (!latest) {
-      const m2 = html.match(/India[^<]*[\s\S]{0,200}?<td[^>]*>([\d]{2,4}\.?\d*)<\/td>/i);
-      if (m2) latest = parseFloat(m2[1]);
-    }
-
-    // Pattern 3: data-value attribute
-    if (!latest) {
-      const m3 = html.match(/data-value="([\d.]+)"/);
-      if (m3) latest = parseFloat(m3[1]);
-    }
-
-    if (latest && latest > 0 && latest < 2000) {
-      results['indiaCds5y'] = {
-        success: true, price: latest, previousClose: prev ?? latest, currency: 'bps', sparkline: [],
-      };
-    } else {
-      results['indiaCds5y'] = { success: false, error: 'CDS parse failed — page structure may have changed' };
-    }
-  } catch (err) {
-    results['indiaCds5y'] = { success: false, error: err.message };
+    results['aaaSpread'] = { success: false, error: 'AAA benchmark not available via free APIs' };
   }
+} catch (err) {
+  results['aaaSpread'] = { success: false, error: err.message };
+}
+  // ── 3. India 5Y CDS ────────────────────────────────────────────────────────
+  // ── 3. India 5Y CDS ────────────────────────────────────────────────────────
+// Source: Stooq.com — carries sovereign CDS data, no auth required
+try {
+  const cdsRes = await fetch(
+    'https://stooq.com/q/l/?s=cds5yinr&f=sd2t2ohlcv&h&e=csv',
+    {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/120' },
+      signal: AbortSignal.timeout(8000),
+    }
+  );
+  const csv = await cdsRes.text();
+  // CSV format: Symbol,Date,Time,Open,High,Low,Close,Volume
+  const lines = csv.trim().split('\n');
+  const latest = lines[1]?.split(',');
+  const prev   = lines[2]?.split(',');
+  const price  = latest ? parseFloat(latest[6]) : null; // Close column
 
+  if (price && price > 0 && price < 2000) {
+    results['indiaCds5y'] = {
+      success: true,
+      price: price,
+      previousClose: prev ? parseFloat(prev[6]) : price,
+      currency: 'bps',
+      sparkline: lines.slice(1, 6).map(l => parseFloat(l.split(',')[6])).filter(Boolean).reverse()
+    };
+  } else {
+    results['indiaCds5y'] = { success: false, error: 'CDS data unavailable from Stooq' };
+  }
+} catch (err) {
+  results['indiaCds5y'] = { success: false, error: err.message };
+}
+  
   res.json(results);
 });
 
