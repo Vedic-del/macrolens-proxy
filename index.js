@@ -70,7 +70,7 @@ app.get('/market-data', async (req, res) => {
     usdinr:       'USDINR=X',
     brentCrude:   'BZ=F',
     gold:         'GC=F',
-    india10y:     'IN10Y=RR',      // ← was ^IN10Y (wrong), now IN10Y=RR
+    india10y:     'NIFTYGS10YR.NS',      
     us10y:        '^TNX',
     niftyPsuBank: '^CNXPSUBANK',
   };
