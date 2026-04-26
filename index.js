@@ -6,26 +6,24 @@ const app = express();
 app.use(cors());
 
 const FEEDS = {
-  const FEEDS = {
 
-  // ── ET (CONFIRMED WORKING) ──────────────────────────────────────────────────
+  // ── ET ──────────────────────────────────────────────────────────────────────
   etEconomy:        'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
   etPolicy:         'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
   etFinance:        'https://economictimes.indiatimes.com/news/economy/finance/rssfeeds/1377065691.cms',
 
-  // ── MINT (CONFIRMED WORKING) ────────────────────────────────────────────────
+  // ── MINT ────────────────────────────────────────────────────────────────────
   mint:             'https://www.livemint.com/rss/economy',
   mintMoney:        'https://www.livemint.com/rss/money',
   mintNews:         'https://www.livemint.com/rss/news',
   mintCompanies:    'https://www.livemint.com/rss/companies',
   mintIndustry:     'https://www.livemint.com/rss/industry',
 
-  // ── CNBC (CONFIRMED WORKING) ────────────────────────────────────────────────
+  // ── CNBC ────────────────────────────────────────────────────────────────────
   cnbc:             'https://www.cnbc.com/id/20910258/device/rss/rss.html',
   cnbcAsia:         'https://www.cnbc.com/id/100727362/device/rss/rss.html',
 
-  // ── GOOGLE NEWS: BY SOURCE (replaces all blocked direct feeds) ─────────────
-  // BS, Moneycontrol, BQ, Bloomberg, FE, Forbes, Hindu BizLine all pulled via Google
+  // ── GOOGLE NEWS: BY SOURCE ──────────────────────────────────────────────────
   gnBusinessStandard: 'https://news.google.com/rss/search?q=site:business-standard.com+economy+banking+RBI&hl=en-IN&gl=IN&ceid=IN:en',
   gnMoneycontrol:     'https://news.google.com/rss/search?q=site:moneycontrol.com+economy+RBI+banking&hl=en-IN&gl=IN&ceid=IN:en',
   gnBQPrime:          'https://news.google.com/rss/search?q=site:bqprime.com+economy+credit+banking&hl=en-IN&gl=IN&ceid=IN:en',
@@ -34,7 +32,7 @@ const FEEDS = {
   gnHinduBizLine:     'https://news.google.com/rss/search?q=site:thehindubusinessline.com+economy+credit&hl=en-IN&gl=IN&ceid=IN:en',
   gnFinancialExpress: 'https://news.google.com/rss/search?q=site:financialexpress.com+economy+RBI+banking&hl=en-IN&gl=IN&ceid=IN:en',
 
-  // ── GOOGLE NEWS: BY TOPIC (ARC-specific — best signal for distressed assets) 
+  // ── GOOGLE NEWS: BY TOPIC ───────────────────────────────────────────────────
   gnNPA:            'https://news.google.com/rss/search?q=India+NPA+%22bad+loans%22+banking&hl=en-IN&gl=IN&ceid=IN:en',
   gnRBI:            'https://news.google.com/rss/search?q=RBI+%22Reserve+Bank%22+policy+rates+liquidity&hl=en-IN&gl=IN&ceid=IN:en',
   gnIBC:            'https://news.google.com/rss/search?q=India+IBC+NCLT+insolvency+%22distressed+assets%22&hl=en-IN&gl=IN&ceid=IN:en',
@@ -67,23 +65,19 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
 
-// ─── MARKET DATA — Credit & Macro Signals ────────────────────────────────────
-// Tile lineup: USD/INR | Brent Crude | Gold | India 10Y
-//              US 10Y  | Nifty PSU Bk | AAA-GSec Spread | India CDS 5Y
-
+// ── MARKET DATA ───────────────────────────────────────────────────────────────
 app.get('/market-data', async (req, res) => {
   const symbols = {
     usdinr:       'USDINR=X',
     brentCrude:   'BZ=F',
     gold:         'GC=F',
-    india10y:     '^INBMK10Y',      
+    india10y:     'NIFTYGS10YR.NS',
     us10y:        '^TNX',
     niftyPsuBank: '^CNXPSUBANK',
   };
 
   const results = {};
 
-  // Helper — tries query1 first, falls back to query2
   const yahooFetch = async (symbol) => {
     for (const host of ['query1', 'query2']) {
       try {
@@ -107,82 +101,99 @@ app.get('/market-data', async (req, res) => {
             sparkline:     closes.filter(Boolean).slice(-5),
           };
         }
-      } catch (_) { /* try next host */ }
+      } catch (_) {}
     }
-    return { success: false, error: 'Both Yahoo endpoints failed' };
+    return { success: false, error: 'Yahoo fetch failed' };
   };
 
-  // ── 1. Standard Yahoo symbols ──────────────────────────────────────────────
   await Promise.allSettled(
     Object.entries(symbols).map(async ([key, symbol]) => {
       results[key] = await yahooFetch(symbol);
     })
   );
 
-// ── 2. AAA Corp Bond Spread ────────────────────────────────────────────────
-// Source: BSE India bond data — HDFC AAA 10Y NCD vs G-Sec
-// Both are Yahoo Finance tickers that actually exist
-try {
-  const [aaaRes, gsecRes] = await Promise.allSettled([
-    yahooFetch('0P0001BW9T.BO'),  // HDFC AAA NCD — BSE-listed bond proxy
-    yahooFetch('IN10Y=RR'),
-  ]);
-
-  const aaaPrice  = aaaRes.status === 'fulfilled'  ? aaaRes.value?.price  : null;
-  const gsecPrice = gsecRes.status === 'fulfilled' ? gsecRes.value?.price : null;
-
-  if (aaaPrice && gsecPrice) {
-    const spread = parseFloat(((aaaPrice - gsecPrice) * 100).toFixed(1));
-    results['aaaSpread'] = {
-      success: true, price: spread,
-      previousClose: spread, currency: 'bps', sparkline: []
-    };
-  } else {
-    // Hard fallback: SEBI/RBI publish ~55-80 bps as typical AAA-GSec spread
-    // Use Investing.com India corporate bond index
-    const investRes = await fetch(
-      'https://api.investing.com/api/financialdata/historical/21666?period=P1W&interval=PT1H',
-      { headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120', 'domain-id': 'in' } }
-    );
-    results['aaaSpread'] = { success: false, error: 'AAA benchmark not available via free APIs' };
-  }
-} catch (err) {
-  results['aaaSpread'] = { success: false, error: err.message };
-}
-  // ── 3. India 5Y CDS ────────────────────────────────────────────────────────
-  // ── 3. India 5Y CDS ────────────────────────────────────────────────────────
-// Source: Stooq.com — carries sovereign CDS data, no auth required
-try {
-  const cdsRes = await fetch(
-    'https://stooq.com/q/l/?s=cds5yinr&f=sd2t2ohlcv&h&e=csv',
-    {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/120' },
-      signal: AbortSignal.timeout(8000),
+  // AAA Spread
+  try {
+    const aaaRes  = await yahooFetch('^CRISIL10YAAA');
+    const gsec    = results['india10y'];
+    if (aaaRes.success && gsec?.success) {
+      const spread = parseFloat(((aaaRes.price - gsec.price) * 100).toFixed(1));
+      results['aaaSpread'] = { success: true, price: spread, previousClose: spread, currency: 'bps', sparkline: [] };
+    } else {
+      results['aaaSpread'] = { success: false, error: 'AAA benchmark unavailable' };
     }
-  );
-  const csv = await cdsRes.text();
-  // CSV format: Symbol,Date,Time,Open,High,Low,Close,Volume
-  const lines = csv.trim().split('\n');
-  const latest = lines[1]?.split(',');
-  const prev   = lines[2]?.split(',');
-  const price  = latest ? parseFloat(latest[6]) : null; // Close column
-
-  if (price && price > 0 && price < 2000) {
-    results['indiaCds5y'] = {
-      success: true,
-      price: price,
-      previousClose: prev ? parseFloat(prev[6]) : price,
-      currency: 'bps',
-      sparkline: lines.slice(1, 6).map(l => parseFloat(l.split(',')[6])).filter(Boolean).reverse()
-    };
-  } else {
-    results['indiaCds5y'] = { success: false, error: 'CDS data unavailable from Stooq' };
+  } catch (err) {
+    results['aaaSpread'] = { success: false, error: err.message };
   }
-} catch (err) {
-  results['indiaCds5y'] = { success: false, error: err.message };
-}
-  
+
+  // India CDS 5Y
+  try {
+    const cdsRes = await fetch('https://www.worldgovernmentbonds.com/cds-historical-data/india/5-years/', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36' },
+      signal: AbortSignal.timeout(10000),
+    });
+    const html    = await cdsRes.text();
+    const matches = [...html.matchAll(/class="num"[^>]*>([\d.]+)<\/td>/g)];
+    const latest  = matches[0] ? parseFloat(matches[0][1]) : null;
+    const prev    = matches[1] ? parseFloat(matches[1][1]) : null;
+    if (latest) {
+      results['indiaCds5y'] = { success: true, price: latest, previousClose: prev ?? latest, currency: 'bps', sparkline: [] };
+    } else {
+      results['indiaCds5y'] = { success: false, error: 'CDS parse failed' };
+    }
+  } catch (err) {
+    results['indiaCds5y'] = { success: false, error: err.message };
+  }
+
   res.json(results);
+});
+
+// ── SOURCE DISCOVERY ──────────────────────────────────────────────────────────
+app.get('/discover-sources', async (req, res) => {
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are helping build a macroeconomic news dashboard for an Indian Asset Reconstruction Company. 
+              Suggest 8 high-quality, publicly accessible RSS feed URLs that would be relevant for tracking: 
+              Indian credit markets, RBI policy, banking sector, NPAs, distressed assets, Indian economy, and global macro trends affecting India.
+              Focus on institutional sources: government bodies, regulators, reputed financial media.
+              Return ONLY a valid JSON array, no markdown, no explanation:
+              [{"name": "Source Name", "url": "https://rss-url-here", "category": "Indian Regulatory|Indian Media|Global Macro", "rationale": "one line why this is relevant"}]`
+            }]
+          }]
+        })
+      }
+    );
+    const geminiData = await geminiRes.json();
+    const rawText    = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const cleanText  = rawText.replace(/```json|```/g, '').trim();
+    const suggestions = JSON.parse(cleanText);
+
+    const tested = await Promise.allSettled(
+      suggestions.map(async (source) => {
+        try {
+          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}&count=3`;
+          const testRes  = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+          const testData = await testRes.json();
+          const isValid  = testData.status === 'ok' && testData.items?.length > 0;
+          return { ...source, credible: isValid, sampleHeadline: isValid ? testData.items[0]?.title : null };
+        } catch {
+          return { ...source, credible: false, sampleHeadline: null };
+        }
+      })
+    );
+
+    const results = tested.filter(r => r.status === 'fulfilled').map(r => r.value).filter(r => r.credible);
+    res.json({ sources: results, discoveredAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => console.log(`MacroLens proxy running on port ${PORT}`));
