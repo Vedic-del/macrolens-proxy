@@ -6,54 +6,43 @@ const app = express();
 app.use(cors());
 
 const FEEDS = {
-  // --- EXISTING SOURCES ---
-  etEconomy: 'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
-  etPolicy: 'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
-  etFinance: 'https://economictimes.indiatimes.com/news/economy/finance/rssfeeds/1377065691.cms',
-  mint: 'https://www.livemint.com/rss/economy',
-  mintMoney: 'https://www.livemint.com/rss/money',
-  bs: 'https://www.business-standard.com/rss/home_page_top_stories.rss',
-  bsBanking: 'https://www.business-standard.com/rss/finance-10301.rss',
-  cnbc: 'https://www.cnbc.com/id/20910258/device/rss/rss.html',
-  cnbcAsia: 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
-  bloombergIndia: 'https://feeds.bloomberg.com/india/news.rss',
-  forbesIndia: 'https://www.forbesindia.com/rss/news.xml',
-  financialExpress: 'https://www.financialexpress.com/economy/feed/',
-  feRBI: 'https://www.financialexpress.com/about/rbi/feed/',
+  const FEEDS = {
 
-  // --- INDIAN GOVERNMENT & REGULATORY ---
-  pib: 'https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3',
-  sebi: 'https://www.sebi.gov.in/sebi_data/rss/sebirss.xml',
-  finmin: 'https://finmin.nic.in/sites/default/files/rss.xml',
-  rbiPress: 'https://www.rbi.org.in/rss/RBIPressReleases.aspx',
+  // ── ET (CONFIRMED WORKING) ──────────────────────────────────────────────────
+  etEconomy:        'https://economictimes.indiatimes.com/economy/rssfeeds/1373380680.cms',
+  etPolicy:         'https://economictimes.indiatimes.com/news/economy/policy/rssfeeds/1015683419.cms',
+  etFinance:        'https://economictimes.indiatimes.com/news/economy/finance/rssfeeds/1377065691.cms',
 
-  // --- INDIAN BUSINESS MEDIA ---
-  bqPrime: 'https://www.bqprime.com/rss',
-  hinduBizLine: 'https://www.thehindubusinessline.com/economy/feeder/default.rss',
-  moneycontrol: 'https://www.moneycontrol.com/rss/economy.xml',
-  feEconomy: 'https://www.financialexpress.com/economy/feed/',
+  // ── MINT (CONFIRMED WORKING) ────────────────────────────────────────────────
+  mint:             'https://www.livemint.com/rss/economy',
+  mintMoney:        'https://www.livemint.com/rss/money',
+  mintNews:         'https://www.livemint.com/rss/news',
+  mintCompanies:    'https://www.livemint.com/rss/companies',
+  mintIndustry:     'https://www.livemint.com/rss/industry',
 
-  // --- GLOBAL MACRO (INSTITUTIONAL) ---
-  imf: 'https://www.imf.org/en/News/Rss?language=eng',
-  worldBankIndia: 'https://feeds.worldbank.org/worldbank/india/rss.xml',
-  bis: 'https://www.bis.org/rss/press_general.htm'
+  // ── CNBC (CONFIRMED WORKING) ────────────────────────────────────────────────
+  cnbc:             'https://www.cnbc.com/id/20910258/device/rss/rss.html',
+  cnbcAsia:         'https://www.cnbc.com/id/100727362/device/rss/rss.html',
 
-  // --- MINT (Additional feeds) ---
-mintNews:       'https://www.livemint.com/rss/news',        // General Mint — top stories
-mintCompanies:  'https://www.livemint.com/rss/companies',   // Corporate distress, M&A
-mintIndustry:   'https://www.livemint.com/rss/industry',    // Sector-level stress signals
+  // ── GOOGLE NEWS: BY SOURCE (replaces all blocked direct feeds) ─────────────
+  // BS, Moneycontrol, BQ, Bloomberg, FE, Forbes, Hindu BizLine all pulled via Google
+  gnBusinessStandard: 'https://news.google.com/rss/search?q=site:business-standard.com+economy+banking+RBI&hl=en-IN&gl=IN&ceid=IN:en',
+  gnMoneycontrol:     'https://news.google.com/rss/search?q=site:moneycontrol.com+economy+RBI+banking&hl=en-IN&gl=IN&ceid=IN:en',
+  gnBQPrime:          'https://news.google.com/rss/search?q=site:bqprime.com+economy+credit+banking&hl=en-IN&gl=IN&ceid=IN:en',
+  gnBloomberg:        'https://news.google.com/rss/search?q=site:bloomberg.com+India+economy+RBI&hl=en-IN&gl=IN&ceid=IN:en',
+  gnForbesIndia:      'https://news.google.com/rss/search?q=site:forbesindia.com+economy+banking&hl=en-IN&gl=IN&ceid=IN:en',
+  gnHinduBizLine:     'https://news.google.com/rss/search?q=site:thehindubusinessline.com+economy+credit&hl=en-IN&gl=IN&ceid=IN:en',
+  gnFinancialExpress: 'https://news.google.com/rss/search?q=site:financialexpress.com+economy+RBI+banking&hl=en-IN&gl=IN&ceid=IN:en',
 
-// --- BUSINESS STANDARD (Additional feeds) ---
-bsEconomy:      'https://www.business-standard.com/rss/economy-policy-10201.rss',   // Policy & macro
-bsCompanies:    'https://www.business-standard.com/rss/companies-10101.rss',        // Corporate news
-bsBanksNBFC:    'https://www.business-standard.com/rss/finance-10301.rss',          // Already have bsBanking — skip if duplicate
+  // ── GOOGLE NEWS: BY TOPIC (ARC-specific — best signal for distressed assets) 
+  gnNPA:            'https://news.google.com/rss/search?q=India+NPA+%22bad+loans%22+banking&hl=en-IN&gl=IN&ceid=IN:en',
+  gnRBI:            'https://news.google.com/rss/search?q=RBI+%22Reserve+Bank%22+policy+rates+liquidity&hl=en-IN&gl=IN&ceid=IN:en',
+  gnIBC:            'https://news.google.com/rss/search?q=India+IBC+NCLT+insolvency+%22distressed+assets%22&hl=en-IN&gl=IN&ceid=IN:en',
+  gnCreditMarkets:  'https://news.google.com/rss/search?q=India+%22credit+market%22+%22bond+yield%22+spread&hl=en-IN&gl=IN&ceid=IN:en',
+  gnSEBI:           'https://news.google.com/rss/search?q=SEBI+%22debt+market%22+India+bonds+regulation&hl=en-IN&gl=IN&ceid=IN:en',
+  gnIMFWorldBank:   'https://news.google.com/rss/search?q=IMF+%22World+Bank%22+India+economy+growth&hl=en-IN&gl=IN&ceid=IN:en',
+  gnGlobalMacro:    'https://news.google.com/rss/search?q=US+Fed+%22interest+rates%22+India+impact+dollar&hl=en-IN&gl=IN&ceid=IN:en',
 
-// --- NEW HIGH-QUALITY ADDITIONS ---
-careRatings:    'https://www.careratings.com/upload/NewsFiles/SplNews/rss.xml',     // CARE credit rating releases — pure ARC gold
-outlookBiz:     'https://www.outlookbusiness.com/rss/latest-news',                  // Outlook Business — good macro takes
-ians:           'https://ians.in/rss/business.xml',                                  // IANS wire — fast-moving India biz news
-ndtvProfit:     'https://feeds.feedburner.com/ndtvprofit-latest',                   // NDTV Profit — liquid, fast news
-theHindu:       'https://www.thehindu.com/business/Economy/feeder/default.rss',     // The Hindu Economy — credible, less noise
 };
 
 app.get('/feeds', async (req, res) => {
