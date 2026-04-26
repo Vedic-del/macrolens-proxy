@@ -37,6 +37,23 @@ const FEEDS = {
   imf: 'https://www.imf.org/en/News/Rss?language=eng',
   worldBankIndia: 'https://feeds.worldbank.org/worldbank/india/rss.xml',
   bis: 'https://www.bis.org/rss/press_general.htm'
+
+  // --- MINT (Additional feeds) ---
+mintNews:       'https://www.livemint.com/rss/news',        // General Mint — top stories
+mintCompanies:  'https://www.livemint.com/rss/companies',   // Corporate distress, M&A
+mintIndustry:   'https://www.livemint.com/rss/industry',    // Sector-level stress signals
+
+// --- BUSINESS STANDARD (Additional feeds) ---
+bsEconomy:      'https://www.business-standard.com/rss/economy-policy-10201.rss',   // Policy & macro
+bsCompanies:    'https://www.business-standard.com/rss/companies-10101.rss',        // Corporate news
+bsBanksNBFC:    'https://www.business-standard.com/rss/finance-10301.rss',          // Already have bsBanking — skip if duplicate
+
+// --- NEW HIGH-QUALITY ADDITIONS ---
+careRatings:    'https://www.careratings.com/upload/NewsFiles/SplNews/rss.xml',     // CARE credit rating releases — pure ARC gold
+outlookBiz:     'https://www.outlookbusiness.com/rss/latest-news',                  // Outlook Business — good macro takes
+ians:           'https://ians.in/rss/business.xml',                                  // IANS wire — fast-moving India biz news
+ndtvProfit:     'https://feeds.feedburner.com/ndtvprofit-latest',                   // NDTV Profit — liquid, fast news
+theHindu:       'https://www.thehindu.com/business/Economy/feeder/default.rss',     // The Hindu Economy — credible, less noise
 };
 
 app.get('/feeds', async (req, res) => {
