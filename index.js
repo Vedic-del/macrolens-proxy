@@ -195,37 +195,79 @@ app.get('/discover-sources', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-const resolveCache = new Map(); // url -> { finalUrl, ts }
-const RESOLVE_TTL = 24 * 60 * 60 * 1000;
+// ─────────────────────────────────────────────────────────────
+// Google News URL resolver
+// Decodes news.google.com/rss/articles/<ID> → real publisher URL
+// ─────────────────────────────────────────────────────────────
+const resolveCache = new Map(); // articleId -> { url, ts }
+const RESOLVE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function extractArticleId(rawUrl) {
+  // Matches /articles/<ID> or /rss/articles/<ID> or /read/<ID>
+  const m = rawUrl.match(/\/(?:rss\/)?(?:articles|read)\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+async function decodeGoogleNewsId(articleId) {
+  // Step A — fetch the article page to grab signature + timestamp
+  const pageRes = await fetch(`https://news.google.com/rss/articles/${articleId}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  });
+  const html = await pageRes.text();
+  const sig = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
+  const ts  = html.match(/data-n-a-ts="([^"]+)"/)?.[1];
+  if (!sig || !ts) throw new Error('signature/timestamp not found in article page');
+
+  // Step B — call batchexecute with the signed payload
+  const payload =
+    '[[["Fbv4je","[\\"garturlreq\\",[[\\"X\\",\\"X\\",[\\"X\\",\\"X\\"],null,null,1,1,\\"US:en\\",null,1,null,null,null,null,null,0,1],\\"X\\",\\"X\\",1,[1,1,1],1,1,null,0,0,null,0],\\"' +
+    articleId + '\\",' + ts + ',\\"' + sig + '\\"]",null,"generic"]]]';
+
+  const beRes = await fetch(
+    'https://news.google.com/_/DotsSplashUi/data/batchexecute?rpcids=Fbv4je',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+      body: 'f.req=' + encodeURIComponent(payload),
+    }
+  );
+  const text = await beRes.text();
+
+  const HEADER = '[\\"garturlres\\",\\"';
+  const FOOTER = '\\",';
+  const i = text.indexOf(HEADER);
+  if (i === -1) throw new Error('garturlres header not found');
+  const tail = text.substring(i + HEADER.length);
+  const j = tail.indexOf(FOOTER);
+  if (j === -1) throw new Error('garturlres footer not found');
+  return tail.substring(0, j);
+}
 
 app.get('/resolve', async (req, res) => {
   const target = req.query.url;
-  if (!target || !/^https?:\/\//.test(target)) {
-    return res.status(400).json({ error: 'invalid url' });
+  if (!target || typeof target !== 'string') {
+    return res.status(400).json({ url: null, error: 'missing url' });
   }
-  const cached = resolveCache.get(target);
-  if (cached && Date.now() - cached.ts < RESOLVE_TTL) {
-    return res.json({ url: cached.finalUrl, cached: true });
+
+  // Non-Google URLs: just echo back (frontend already handles direct URLs).
+  if (!target.includes('news.google.com')) {
+    return res.json({ url: target });
   }
+
+  const id = extractArticleId(target);
+  if (!id) return res.json({ url: null, error: 'could not extract article id' });
+
+  const cached = resolveCache.get(id);
+  if (cached && Date.now() - cached.ts < RESOLVE_TTL_MS) {
+    return res.json({ url: cached.url, cached: true });
+  }
+
   try {
-    const r = await fetch(target, {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-      },
-    });
-    let finalUrl = r.url;
-    if (finalUrl.includes('news.google.com')) {
-      const html = await r.text();
-      const meta = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+url=([^"'>\s]+)/i);
-      const dataAttr = html.match(/data-n-au=["']([^"']+)["']/i);
-      if (meta) finalUrl = meta[1];
-      else if (dataAttr) finalUrl = dataAttr[1];
-    }
-    resolveCache.set(target, { finalUrl, ts: Date.now() });
+    const finalUrl = await decodeGoogleNewsId(id);
+    resolveCache.set(id, { url: finalUrl, ts: Date.now() });
     res.json({ url: finalUrl });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.json({ url: null, error: err.message });
   }
 });
 
