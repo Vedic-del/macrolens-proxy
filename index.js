@@ -195,5 +195,38 @@ app.get('/discover-sources', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+const resolveCache = new Map(); // url -> { finalUrl, ts }
+const RESOLVE_TTL = 24 * 60 * 60 * 1000;
+
+app.get('/resolve', async (req, res) => {
+  const target = req.query.url;
+  if (!target || !/^https?:\/\//.test(target)) {
+    return res.status(400).json({ error: 'invalid url' });
+  }
+  const cached = resolveCache.get(target);
+  if (cached && Date.now() - cached.ts < RESOLVE_TTL) {
+    return res.json({ url: cached.finalUrl, cached: true });
+  }
+  try {
+    const r = await fetch(target, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      },
+    });
+    let finalUrl = r.url;
+    if (finalUrl.includes('news.google.com')) {
+      const html = await r.text();
+      const meta = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+url=([^"'>\s]+)/i);
+      const dataAttr = html.match(/data-n-au=["']([^"']+)["']/i);
+      if (meta) finalUrl = meta[1];
+      else if (dataAttr) finalUrl = dataAttr[1];
+    }
+    resolveCache.set(target, { finalUrl, ts: Date.now() });
+    res.json({ url: finalUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(PORT, () => console.log(`MacroLens proxy running on port ${PORT}`));
